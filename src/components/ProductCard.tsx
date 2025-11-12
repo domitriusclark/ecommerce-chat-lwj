@@ -4,9 +4,10 @@ interface ProductCardProps {
   product: UIProduct;
   onTryOn: (product: UIProduct) => void;
   onAddToCart?: (product: UIProduct) => void; // Optional, will be handled by Shopify MCP
+  isAddingToCart?: boolean;
 }
 
-export default function ProductCard({ product, onTryOn, onAddToCart }: ProductCardProps) {
+export default function ProductCard({ product, onTryOn, onAddToCart, isAddingToCart }: ProductCardProps) {
   const formatPrice = (price?: { amount: number; currencyCode: string }) => {
     if (!price) return 'Price not available';
     return new Intl.NumberFormat('en-US', {
@@ -89,17 +90,24 @@ export default function ProductCard({ product, onTryOn, onAddToCart }: ProductCa
           </div>
         )}
 
-        {/* Add to Cart Button */}
-        {onAddToCart && (
+        <div className="flex gap-2 pt-3">
           <button
-            onClick={() => onAddToCart(product)}
-            className="w-full mt-3 px-4 py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
+            onClick={() => onTryOn(product)}
+            className="flex-1 px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            Add to Cart
+            Try On
           </button>
-        )}
+          {onAddToCart && (
+            <button
+              onClick={() => onAddToCart(product)}
+              className="flex-1 px-3 py-2 text-sm font-medium rounded-lg bg-black text-white hover:bg-gray-800 transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed"
+              disabled={isAddingToCart}
+            >
+              {isAddingToCart ? 'Adding...' : 'Add to Cart'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-

@@ -40,6 +40,7 @@ Add to `.env`:
 OPENROUTER_API_KEY=your_key_here
 STOREFRONT_MCP_ENDPOINT=https://your-store.myshopify.com/api/mcp
 SHOPIFY_STOREFRONT_PASSWORD=your_password  # Only if store is password-protected
+SHOPIFY_STOREFRONT_ACCESS_TOKEN=your_storefront_access_token  # Needed for checkout/cart mutations
 ```
 
 ---

@@ -1,134 +1,200 @@
-import type { APIRoute } from 'astro';
+import type { APIRoute } from "astro";
 
-const SHOPIFY_STORE_DOMAIN = import.meta.env.PUBLIC_SHOPIFY_STORE_DOMAIN || 'your-store.myshopify.com';
-const STOREFRONT_API_TOKEN = import.meta.env.SHOPIFY_STOREFRONT_API_ACCESS_TOKEN;
-const STOREFRONT_API_VERSION = '2024-01';
+const SHOPIFY_STOREFRONT_ACCESS_TOKEN =
+  import.meta.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+const STOREFRONT_MCP_ENDPOINT = import.meta.env.STOREFRONT_MCP_ENDPOINT;
+const SHOPIFY_API_VERSION = "2024-01";
 
-interface LineItem {
-  variantId: string;
-  quantity: number;
+const CART_CREATE_MUTATION = /* GraphQL */ `
+  mutation CartCreate($input: CartInput!) {
+    cartCreate(input: $input) {
+      cart {
+        id
+        checkoutUrl
+        totalQuantity
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+const CART_LINES_ADD_MUTATION = /* GraphQL */ `
+  mutation CartLinesAdd($cartId: ID!, $lines: [CartLineInput!]!) {
+    cartLinesAdd(cartId: $cartId, lines: $lines) {
+      cart {
+        id
+        checkoutUrl
+        totalQuantity
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+function deriveStorefrontApiUrl(): string | null {
+  if (!STOREFRONT_MCP_ENDPOINT) return null;
+
+  try {
+    const endpointUrl = new URL(STOREFRONT_MCP_ENDPOINT);
+    return `${endpointUrl.origin}/api/${SHOPIFY_API_VERSION}/graphql.json`;
+  } catch (error) {
+    console.error("Invalid STOREFRONT_MCP_ENDPOINT:", error);
+    return null;
+  }
 }
 
-interface CheckoutCreateResponse {
-  data: {
-    checkoutCreate: {
-      checkout: {
-        id: string;
-        webUrl: string;
-      };
-      checkoutUserErrors: Array<{
-        message: string;
-        field: string[];
-      }>;
-    };
-  };
+async function callShopifyGraphQL<T>(query: string, variables: Record<string, any>) {
+  const storefrontApiUrl = deriveStorefrontApiUrl();
+  if (!storefrontApiUrl) {
+    throw new Error("Unable to derive Shopify Storefront API URL");
+  }
+
+  const response = await fetch(storefrontApiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Storefront-Access-Token": SHOPIFY_STOREFRONT_ACCESS_TOKEN || "",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Shopify Storefront API error (${response.status}): ${errorText.substring(0, 500)}`
+    );
+  }
+
+  const json = await response.json();
+
+  if (json.errors) {
+    throw new Error(
+      `Shopify GraphQL errors: ${JSON.stringify(json.errors)}`
+    );
+  }
+
+  return json.data as T;
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  try {
-    const { lineItems } = await request.json();
-
-    if (!lineItems || !Array.isArray(lineItems) || lineItems.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid line items' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Validate environment variables
-    if (!STOREFRONT_API_TOKEN) {
-      console.error('SHOPIFY_STOREFRONT_API_ACCESS_TOKEN is not set');
-      return new Response(
-        JSON.stringify({ error: 'Shopify API token not configured' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Create checkout mutation
-    const mutation = `
-      mutation checkoutCreate($input: CheckoutCreateInput!) {
-        checkoutCreate(input: $input) {
-          checkout {
-            id
-            webUrl
-          }
-          checkoutUserErrors {
-            message
-            field
-          }
-        }
-      }
-    `;
-
-    const variables = {
-      input: {
-        lineItems: lineItems.map((item: LineItem) => ({
-          variantId: item.variantId,
-          quantity: item.quantity,
-        })),
-      },
-    };
-
-    // Call Shopify Storefront API
-    const response = await fetch(
-      `https://${SHOPIFY_STORE_DOMAIN}/api/${STOREFRONT_API_VERSION}/graphql.json`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': STOREFRONT_API_TOKEN,
-        },
-        body: JSON.stringify({
-          query: mutation,
-          variables,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Shopify API error:', response.status, errorText);
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to create checkout',
-          details: errorText 
-        }),
-        { status: response.status, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const data: CheckoutCreateResponse = await response.json();
-
-    // Check for user errors
-    if (data.data.checkoutCreate.checkoutUserErrors.length > 0) {
-      const errors = data.data.checkoutCreate.checkoutUserErrors
-        .map(err => err.message)
-        .join(', ');
-      console.error('Checkout creation errors:', errors);
-      return new Response(
-        JSON.stringify({ error: errors }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Return checkout URL
+  if (!SHOPIFY_STOREFRONT_ACCESS_TOKEN) {
     return new Response(
       JSON.stringify({
-        checkoutUrl: data.data.checkoutCreate.checkout.webUrl,
-        checkoutId: data.data.checkoutCreate.checkout.id,
+        error: "SHOPIFY_STOREFRONT_ACCESS_TOKEN is not configured",
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
+  }
 
-  } catch (error) {
-    console.error('Checkout API error:', error);
+  try {
+    const { variantId, quantity = 1, cartId } = await request.json();
+
+    if (!variantId) {
+      return new Response(
+        JSON.stringify({ error: "variantId is required" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const lines = [
+      {
+        quantity,
+        merchandiseId: variantId,
+      },
+    ];
+
+    if (cartId) {
+      type CartLinesAddResponse = {
+        cartLinesAdd: {
+          cart: {
+            id: string;
+            checkoutUrl: string;
+            totalQuantity: number;
+          } | null;
+          userErrors: Array<{ field?: string[]; message: string }>;
+        };
+      };
+
+      const data = await callShopifyGraphQL<CartLinesAddResponse>(
+        CART_LINES_ADD_MUTATION,
+        { cartId, lines }
+      );
+
+      const result = data.cartLinesAdd;
+      if (result.userErrors?.length) {
+        throw new Error(result.userErrors.map((err) => err.message).join(", "));
+      }
+
+      if (!result.cart) {
+        throw new Error("Cart could not be updated");
+      }
+
+      return new Response(
+        JSON.stringify({
+          cartId: result.cart.id,
+          checkoutUrl: result.cart.checkoutUrl,
+          totalQuantity: result.cart.totalQuantity,
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    } else {
+      type CartCreateResponse = {
+        cartCreate: {
+          cart: {
+            id: string;
+            checkoutUrl: string;
+            totalQuantity: number;
+          } | null;
+          userErrors: Array<{ field?: string[]; message: string }>;
+        };
+      };
+
+      const data = await callShopifyGraphQL<CartCreateResponse>(
+        CART_CREATE_MUTATION,
+        { input: { lines } }
+      );
+
+      const result = data.cartCreate;
+      if (result.userErrors?.length) {
+        throw new Error(result.userErrors.map((err) => err.message).join(", "));
+      }
+
+      if (!result.cart) {
+        throw new Error("Cart could not be created");
+      }
+
+      return new Response(
+        JSON.stringify({
+          cartId: result.cart.id,
+          checkoutUrl: result.cart.checkoutUrl,
+          totalQuantity: result.cart.totalQuantity,
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+  } catch (error: any) {
+    console.error("Checkout error:", error);
     return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error'
+      JSON.stringify({
+        error: "Unable to process checkout request",
+        detail: error.message || "Unknown error",
       }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
 };
-

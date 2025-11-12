@@ -5,9 +5,10 @@ interface ProductGridProps {
   products: UIProduct[];
   onTryOn: (product: UIProduct) => void;
   onAddToCart?: (product: UIProduct) => void; // Optional, Shopify MCP handles cart
+  addingProductId?: string | null;
 }
 
-export default function ProductGrid({ products, onTryOn, onAddToCart }: ProductGridProps) {
+export default function ProductGrid({ products, onTryOn, onAddToCart, addingProductId }: ProductGridProps) {
   if (!products || products.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -25,6 +26,7 @@ export default function ProductGrid({ products, onTryOn, onAddToCart }: ProductG
             product={product}
             onTryOn={onTryOn}
             onAddToCart={onAddToCart}
+            isAddingToCart={addingProductId === product.id}
           />
         ))}
       </div>
@@ -34,4 +36,3 @@ export default function ProductGrid({ products, onTryOn, onAddToCart }: ProductG
     </div>
   );
 }
-

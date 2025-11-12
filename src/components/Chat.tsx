@@ -8,6 +8,12 @@ import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
 import VariantSelector from "./VariantSelector";
 
+interface CartInfo {
+  cartId: string;
+  checkoutUrl: string;
+  totalQuantity: number;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -34,6 +40,10 @@ export default function Chat({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasContext, setHasContext] = useState(false);
+  const [cartInfo, setCartInfo] = useState<CartInfo | null>(null);
+  const [cartStatusMessage, setCartStatusMessage] = useState<string | null>(null);
+  const [cartError, setCartError] = useState<string | null>(null);
+  const [addingProductId, setAddingProductId] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(
     null
   );
@@ -43,6 +53,7 @@ export default function Chat({
   const [currentUserContext, setCurrentUserContext] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const CART_STORAGE_KEY = "shopify-cart-info";
 
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -167,15 +178,47 @@ export default function Chat({
     setIsTryOnModalOpen(true);
   }
 
-  function handleAddToCartClick(product: UIProduct) {
-    setProductForCart(product);
-    setIsVariantSelectorOpen(true);
+  async function handleAddToCart(product: UIProduct) {
+    if (addingProductId) return;
+
+    const variantId = product.variants?.[0]?.id;
+    if (!variantId) {
+      setCartError("No purchasable variants found for this item.");
+      return;
+    }
+
+    setAddingProductId(product.id);
+    setCartError(null);
+
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          variantId,
+          quantity: 1,
+          cartId: cartInfo?.cartId,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || "Failed to add to cart");
+      }
+
+      setCartInfo(data);
+      setCartStatusMessage(`${product.title} was added to your cart.`);
+    } catch (error) {
+      console.error("Add to cart error:", error);
+      setCartError("Unable to add item to cart. Please try again.");
+    } finally {
+      setAddingProductId(null);
+    }
   }
 
-  function handleVariantSelected(variant: ProductVariant, quantity: number) {
-    if (productForCart) {
-      onAddToCart(productForCart, variant, quantity);
-      setProductForCart(null);
+  function handleCheckoutClick() {
+    if (cartInfo?.checkoutUrl) {
+      window.open(cartInfo.checkoutUrl, "_blank", "noopener,noreferrer");
     }
   }
 
@@ -196,8 +239,9 @@ export default function Chat({
           <div className='mt-4'>
             <ProductGrid
               products={message.products}
-              onTryOn={(product) => handleTryOn(product, message.userQuery)}
-              onAddToCart={handleAddToCartClick}
+              onTryOn={handleTryOn}
+              onAddToCart={handleAddToCart}
+              addingProductId={addingProductId}
             />
           </div>
         )}
@@ -214,6 +258,33 @@ export default function Chat({
       inputRef.current?.focus();
     }
   }, [isLoading]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedCart = window.localStorage.getItem(CART_STORAGE_KEY);
+    if (savedCart) {
+      try {
+        setCartInfo(JSON.parse(savedCart) as CartInfo);
+      } catch (error) {
+        console.error("Failed to parse saved cart info:", error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (cartInfo) {
+      window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartInfo));
+    } else {
+      window.localStorage.removeItem(CART_STORAGE_KEY);
+    }
+  }, [cartInfo]);
+
+  useEffect(() => {
+    if (!cartStatusMessage) return;
+    const timeout = setTimeout(() => setCartStatusMessage(null), 4000);
+    return () => clearTimeout(timeout);
+  }, [cartStatusMessage]);
 
   return (
     <div className='flex flex-col h-screen flex-1 bg-white'>
@@ -246,7 +317,25 @@ export default function Chat({
         >
           New Conversation
         </button>
+        <button
+          onClick={handleCheckoutClick}
+          className='px-4 py-2 text-sm font-medium rounded border border-gray-300 text-white bg-gray-900 disabled:opacity-50 disabled:cursor-not-allowed'
+          disabled={!cartInfo?.checkoutUrl}
+        >
+          {cartInfo?.totalQuantity
+            ? `Checkout (${cartInfo.totalQuantity})`
+            : "Checkout"}
+        </button>
       </div>
+
+      {(cartStatusMessage || cartError) && (
+        <div className='px-4 py-2 border-b border-gray-200 bg-white text-sm'>
+          {cartStatusMessage && (
+            <p className='text-green-700 font-medium'>{cartStatusMessage}</p>
+          )}
+          {cartError && <p className='text-red-600'>{cartError}</p>}
+        </div>
+      )}
 
       {/* Messages */}
       <div className='flex-1 overflow-y-auto p-4'>
