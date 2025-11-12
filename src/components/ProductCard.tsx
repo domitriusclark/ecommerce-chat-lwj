@@ -49,36 +49,43 @@ export default function ProductCard({ product, onTryOn, onAddToCart }: ProductCa
       )}
 
       {/* Product Image */}
-      {product.imageUrl && (
-        <div className="w-full h-48 mb-3 overflow-hidden rounded-md bg-gray-100">
+      <div className="w-full h-48 mb-3 overflow-hidden rounded-md bg-gray-100 flex items-center justify-center">
+        {product.imageUrl ? (
           <img
             src={product.imageUrl}
             alt={product.title}
             className="w-full h-full object-cover"
+            onError={(e) => {
+              // Fallback if image fails to load
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.parentElement!.innerHTML = '<div class="text-gray-400 text-xs">No image</div>';
+            }}
           />
-        </div>
-      )}
+        ) : (
+          <div className="text-gray-400 text-xs">No image available</div>
+        )}
+      </div>
 
       {/* Product Info */}
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2">
+        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 min-h-[2.5rem]">
           {product.title}
         </h3>
-        
-        {product.description && (
-          <p className="text-xs text-gray-600 line-clamp-2">
+
+        {product.description && product.description.length > 0 && (
+          <p className="text-xs text-gray-600 line-clamp-3 min-h-[3rem]">
             {product.description}
           </p>
         )}
 
-        <div className="text-lg font-bold text-gray-900">
+        <div className="text-lg font-bold text-blue-600 pt-2">
           {formatPrice(product.price)}
         </div>
 
         {/* Available Sizes */}
-        {product.variants && product.variants.length > 0 && (
-          <div className="text-xs text-gray-500 mt-2">
-            Sizes: {product.variants.map(v => v.title).join(', ')}
+        {product.variants && product.variants.length > 1 && (
+          <div className="text-xs text-gray-500 pt-1">
+            {product.variants.length} size{product.variants.length !== 1 ? 's' : ''} available
           </div>
         )}
       </div>

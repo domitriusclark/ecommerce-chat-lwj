@@ -213,3 +213,77 @@ export function getAllProducts(): UIProduct[] {
   return loadMockProducts().map(mapToUIProduct);
 }
 
+/**
+ * Shopify MCP Product format (from search_shop_catalog response)
+ */
+export interface ShopifyMCPProduct {
+  product_id: string;
+  title: string;
+  description?: string;
+  image_url?: string;
+  price_range?: {
+    min: string;
+    max: string;
+    currency: string;
+  };
+  product_type?: string;
+  tags?: string[];
+  variants?: Array<{
+    variant_id: string;
+    title: string;
+    price: string;
+    currency: string;
+    image_url?: string;
+    available: boolean;
+  }>;
+}
+
+/**
+ * Transform Shopify MCP product to UIProduct format
+ */
+export function mapShopifyMCPToUIProduct(mcpProduct: ShopifyMCPProduct): UIProduct {
+  // Convert MCP variants to ProductVariant format
+  const variants = mcpProduct.variants?.map(v => ({
+    id: v.variant_id,
+    title: v.title,
+    price: v.price,
+    availableForSale: v.available,
+  }));
+
+  // Get price from price_range
+  const price = mcpProduct.price_range ? {
+    amount: parseFloat(mcpProduct.price_range.min),
+    currencyCode: mcpProduct.price_range.currency,
+  } : undefined;
+
+  // Clean up description - remove empty strings and HTML tags
+  let cleanDescription = mcpProduct.description?.trim() || undefined;
+  if (cleanDescription) {
+    // Strip HTML tags
+    cleanDescription = cleanDescription.replace(/<[^>]*>/g, '');
+    // If empty after cleanup, set to undefined
+    if (!cleanDescription) cleanDescription = undefined;
+  }
+
+  // Clean up title - capitalize properly
+  const cleanTitle = mcpProduct.title.trim();
+
+  // Create handle from title
+  const handle = cleanTitle.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+  // Ensure image URL is valid
+  const imageUrl = mcpProduct.image_url?.trim() || undefined;
+
+  return {
+    id: mcpProduct.product_id,
+    title: cleanTitle,
+    description: cleanDescription,
+    imageUrl: imageUrl,
+    price,
+    variants,
+    overlayAssetUrl: imageUrl, // Use product image as overlay for now
+    handle,
+    url: `/products/${handle}`,
+  };
+}
+

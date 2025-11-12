@@ -119,22 +119,29 @@ export const POST: APIRoute = async ({ request, url }) => {
 Available Tools:
 - search_shop_catalog: Search the product catalog. Use focused, natural language queries like "blue linen shirt" or "women's oxford shirt white". Returns up to 5 products with title, price, image, and details.
 
-When users ask about products:
-1. Use search_shop_catalog with concise search terms to find relevant products
-2. Acknowledge their request warmly
-3. Mention that you'll show them relevant products below the chat
-4. Highlight key features like virtual try-on capability
-5. Present results clearly with product names and prices
-6. Keep responses concise and friendly
+IMPORTANT: When you use search_shop_catalog:
+1. Use the tool with concise search terms to find relevant products
+2. After the tool returns results, give a brief, friendly response acknowledging what you found
+3. DO NOT list product names, prices, or details in your response - they will be displayed automatically in product cards below your message
+4. Keep your response SHORT - just 1-2 sentences acknowledging the search
+5. You can mention features like "try on any item with the virtual try-on feature" or "click to add to cart"
 
-Available products include various styles of shirts: casual, formal, linen, cotton, polo, flannel, etc.
+Example good responses after finding products:
+- "I found some great flannels for you! Check them out below."
+- "Here are some shirts that match what you're looking for."
+- "Perfect! I found several options. You can virtually try on any of them!"
 
-Key features:
-- Virtual try-on: Users can upload a photo and virtually try on any item
-- Shopping cart: Users can add items and proceed to checkout
-- Product search: You can help find specific styles, colors, or types
+Example BAD responses (too detailed - don't do this):
+- Listing product names, prices, or links
+- Creating bullet point lists of products
+- Using markdown to format product details
 
-Be conversational and helpful!`;
+Key features available to users:
+- Virtual try-on: Upload a photo and virtually try on any item
+- Shopping cart: Add items and proceed to checkout
+- Product search: Find specific styles, colors, or types
+
+Be conversational, concise, and helpful!`;
 
     // Add system prompt if this is the first message
     const messages: ChatMessage[] = [];
@@ -203,7 +210,8 @@ Be conversational and helpful!`;
               },
             ];
 
-            // Execute tool calls
+            // Execute tool calls and collect product data
+            let shopifyProducts: any[] = [];
             for (const toolCall of toolCalls) {
               if (toolCall.function.name === "search_shop_catalog") {
                 console.log(
@@ -221,6 +229,19 @@ Be conversational and helpful!`;
                   JSON.stringify(toolResult).substring(0, 200)
                 );
 
+                // Extract product data from MCP response
+                try {
+                  if (toolResult.content && toolResult.content[0]?.text) {
+                    const parsedContent = JSON.parse(toolResult.content[0].text);
+                    if (parsedContent.products && Array.isArray(parsedContent.products)) {
+                      shopifyProducts = parsedContent.products;
+                      console.log(`Extracted ${shopifyProducts.length} products from Shopify MCP`);
+                    }
+                  }
+                } catch (e) {
+                  console.error("Failed to extract products from MCP response:", e);
+                }
+
                 newHistory.push({
                   role: "assistant" as const,
                   content: JSON.stringify(toolResult),
@@ -229,6 +250,11 @@ Be conversational and helpful!`;
                 });
               }
             }
+
+            // Stream product data marker before AI response (even if empty array)
+            const productMarker = `[SHOPIFY_PRODUCTS]${JSON.stringify(shopifyProducts)}[/SHOPIFY_PRODUCTS]\n`;
+            controller.enqueue(new TextEncoder().encode(productMarker));
+            console.log("Streamed product data marker with", shopifyProducts.length, "products");
 
             // Get final response from AI with tool results
             const finalStream = await client.chat.send({

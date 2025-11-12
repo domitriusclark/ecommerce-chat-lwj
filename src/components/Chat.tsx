@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { UIProduct } from "../types/product";
-import { searchProducts } from "../lib/productUtils";
+import { mapShopifyMCPToUIProduct, type ShopifyMCPProduct } from "../lib/productUtils";
 import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
 
@@ -48,37 +48,12 @@ export default function Chat({ selfieImage }: ChatProps) {
     }
   }
 
-  function detectProductQuery(text: string): UIProduct[] | null {
-    const lowerText = text.toLowerCase();
-    const productKeywords = [
-      "shirt",
-      "shirts",
-      "clothing",
-      "wear",
-      "buy",
-      "shop",
-      "show",
-      "find",
-    ];
-
-    const hasProductKeyword = productKeywords.some((keyword) =>
-      lowerText.includes(keyword)
-    );
-
-    if (hasProductKeyword) {
-      // If user is asking about products, just return all products for now
-      // (since we only have shirts anyway)
-      return searchProducts("");
-    }
-
-    return null;
-  }
-
   async function processStreamedResponse(
     reader: ReadableStreamDefaultReader<Uint8Array>,
     userQuery: string
   ) {
     let assistantMessage = "";
+    let shopifyProducts: UIProduct[] | undefined;
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     while (true) {
@@ -87,18 +62,31 @@ export default function Chat({ selfieImage }: ChatProps) {
 
       const text = new TextDecoder().decode(value);
       assistantMessage += text;
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        { role: "assistant", content: assistantMessage },
-      ]);
-    }
 
-    // Check if the user query was about products
-    const products = detectProductQuery(userQuery);
-    if (products && products.length > 0) {
+      // Check for Shopify product markers
+      const productMatch = assistantMessage.match(/\[SHOPIFY_PRODUCTS\](.*?)\[\/SHOPIFY_PRODUCTS\]/s);
+      if (productMatch) {
+        try {
+          const mcpProducts: ShopifyMCPProduct[] = JSON.parse(productMatch[1]);
+          console.log("Raw MCP Products:", mcpProducts);
+          shopifyProducts = mcpProducts.map(mapShopifyMCPToUIProduct);
+          console.log(`Parsed ${shopifyProducts.length} Shopify products from stream`);
+          console.log("Mapped UIProducts:", shopifyProducts);
+
+          // Remove the marker from the displayed message
+          assistantMessage = assistantMessage.replace(/\[SHOPIFY_PRODUCTS\].*?\[\/SHOPIFY_PRODUCTS\]\n?/s, '');
+        } catch (e) {
+          console.error("Failed to parse Shopify products from stream:", e);
+        }
+      }
+
       setMessages((prev) => [
         ...prev.slice(0, -1),
-        { role: "assistant", content: assistantMessage, products },
+        {
+          role: "assistant",
+          content: assistantMessage,
+          products: shopifyProducts,
+        },
       ]);
     }
   }
