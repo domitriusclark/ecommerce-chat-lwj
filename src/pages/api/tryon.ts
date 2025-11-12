@@ -11,7 +11,8 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    const { selfieImage, productImage, productTitle } = await request.json();
+    const { selfieImage, productImage, productTitle, userContext } =
+      await request.json();
 
     if (!selfieImage || !productImage) {
       return new Response(
@@ -24,6 +25,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     // Construct the prompt for virtual try-on
     // Important: Focus on the visual product image, not the title
+    const contextSection = userContext
+      ? `\n\nUSER'S CONTEXT: "${userContext}"\nUse this context to generate an appropriate background and setting. Be creative and authentic to this specific scenario.`
+      : "";
+
     const prompt = `Generate a photorealistic image of the person from the first image wearing the EXACT clothing item shown in the second image.
 
 CRITICAL: Look at the second image carefully and use the EXACT clothing item you see there - the exact color, style, pattern, and design. Ignore any text descriptions and only use what you visually see in the second image.
@@ -31,21 +36,21 @@ CRITICAL: Look at the second image carefully and use the EXACT clothing item you
 Instructions:
 - Use the EXACT clothing item from the second image (exact colors, patterns, style)
 - Naturally fit the clothing onto the person's body
-- Make the clothing look natural and properly fitted
-- The result should look like a real professional photograph
+- Make the clothing look natural and properly fitted${contextSection}
 
-BACKGROUND & CONTEXT - IMPORTANT:
-If the user mentioned a specific purpose, event, or setting for the clothing (such as "for work", "for the office", "for a wedding", "for a date", "for a casual day out", etc.), generate an appropriate background and pose that matches that context:
-- Office/Work: Professional office setting, business environment
-- Wedding/Formal: Elegant venue, formal setting
-- Casual/Weekend: Relaxed outdoor or casual indoor setting
-- Date: Romantic restaurant or nice venue
-- Interview: Professional, clean background
-- Party/Social: Social gathering environment
+BACKGROUND & CONTEXT - ADAPTIVE & DYNAMIC:
+Analyze the context from any conversation or details about where/when this clothing will be worn. Look for ANY mention of:
+- Events (birthday party, wedding, conference, concert, picnic, etc.)
+- Settings (office, outdoors, restaurant, home, beach, etc.)
+- Activities (meeting, playing, dancing, shopping, traveling, etc.)
+- Time of day or atmosphere (morning coffee, evening dinner, casual weekend, etc.)
+- Social context (with kids, professional meeting, date night, family gathering, etc.)
 
-If NO specific context was mentioned, use a neutral, professional background that complements the clothing style.
+Generate a background and environment that authentically represents that specific context. Be creative and specific - if it's a "kids birthday party", show a colorful party setting with balloons and decorations. If it's a "beach vacation", show a beach backdrop. If it's "working from home", show a home office setting.
 
-Create a seamless, realistic result where the person is wearing the exact clothing from the second image in an appropriate setting.`;
+If NO specific context is mentioned, create a clean, neutral background that lets the clothing be the focus while still feeling natural and contextual to the clothing style.
+
+The background should feel like a real photograph taken in that environment, not a studio backdrop. Make the lighting, pose, and setting all work together to tell the story of where this person would actually wear this clothing.`;
 
     // Prepare images - ensure they're in proper base64 format
     const selfieBase64 = selfieImage.startsWith("data:")

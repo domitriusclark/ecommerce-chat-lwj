@@ -114,34 +114,44 @@ export const POST: APIRoute = async ({ request, url }) => {
     const history = chatHistory.get(CHAT_HISTORY_KEY) || [];
 
     // Enhanced system prompt combining tool definitions and ecommerce context
-    const enhancedSystemPrompt = `You are a helpful ecommerce shopping assistant. Help users find and shop for clothing, particularly shirts.
+    const enhancedSystemPrompt = `You are an ecommerce shopping assistant for a clothing store.
 
-Available Tools:
-- search_shop_catalog: Search the product catalog. Use focused, natural language queries like "blue linen shirt" or "women's oxford shirt white". Returns up to 5 products with title, price, image, and details.
+TOOL: search_shop_catalog
+Searches the product catalog. Returns products with images, prices, and details.
 
-IMPORTANT: When you use search_shop_catalog:
-1. Use the tool with concise search terms to find relevant products
-2. After the tool returns results, give a brief, friendly response acknowledging what you found
-3. DO NOT list product names, prices, or details in your response - they will be displayed automatically in product cards below your message
-4. Keep your response SHORT - just 1-2 sentences acknowledging the search
-5. You can mention features like "try on any item with the virtual try-on feature" or "click to add to cart"
+CORE RULE - USER ASKS FOR CLOTHING = CALL SEARCH TOOL:
+If user mentions ANY clothing item → IMMEDIATELY call search_shop_catalog
 
-Example good responses after finding products:
-- "I found some great flannels for you! Check them out below."
-- "Here are some shirts that match what you're looking for."
-- "Perfect! I found several options. You can virtually try on any of them!"
+Extract ONLY the clothing type. Ignore all context words:
+- "shirt for shark watching" → search: "shirt"
+- "blue pants for office" → search: "blue pants"  
+- "casual shirt for Mars trip" → search: "casual shirt"
 
-Example BAD responses (too detailed - don't do this):
-- Listing product names, prices, or links
-- Creating bullet point lists of products
-- Using markdown to format product details
+Context (shark watching, office, Mars) is ONLY for virtual try-on backgrounds. It does NOT affect which products to show.
 
-Key features available to users:
-- Virtual try-on: Upload a photo and virtually try on any item
-- Shopping cart: Add items and proceed to checkout
-- Product search: Find specific styles, colors, or types
+NEVER say:
+- "I couldn't find products for [context]"
+- Give generic suggestions without searching
 
-Be conversational, concise, and helpful!`;
+ALWAYS do:
+1. Call search_shop_catalog with clothing type
+2. Respond briefly (1-2 sentences): "Here are some great [items]! [Optional: mention context]"
+3. Products display automatically below your message
+
+Examples:
+User: "shirt for basketball game"
+→ search_shop_catalog("shirt")
+→ "I found some great shirts! These would work well for the basketball game."
+
+User: "I need pants for shark watching"  
+→ search_shop_catalog("pants")
+→ "Here are some pants options! Perfect for shark watching."
+
+Features:
+- Virtual try-on: Upload photo, see items in ANY context/background
+- Shopping cart: Add items and checkout
+
+You show ALL available products. User decides what they like. The virtual try-on will generate backgrounds matching their context.`;
 
     // Add system prompt if this is the first message
     const messages: ChatMessage[] = [];
@@ -232,14 +242,24 @@ Be conversational, concise, and helpful!`;
                 // Extract product data from MCP response
                 try {
                   if (toolResult.content && toolResult.content[0]?.text) {
-                    const parsedContent = JSON.parse(toolResult.content[0].text);
-                    if (parsedContent.products && Array.isArray(parsedContent.products)) {
+                    const parsedContent = JSON.parse(
+                      toolResult.content[0].text
+                    );
+                    if (
+                      parsedContent.products &&
+                      Array.isArray(parsedContent.products)
+                    ) {
                       shopifyProducts = parsedContent.products;
-                      console.log(`Extracted ${shopifyProducts.length} products from Shopify MCP`);
+                      console.log(
+                        `Extracted ${shopifyProducts.length} products from Shopify MCP`
+                      );
                     }
                   }
                 } catch (e) {
-                  console.error("Failed to extract products from MCP response:", e);
+                  console.error(
+                    "Failed to extract products from MCP response:",
+                    e
+                  );
                 }
 
                 newHistory.push({
@@ -252,9 +272,15 @@ Be conversational, concise, and helpful!`;
             }
 
             // Stream product data marker before AI response (even if empty array)
-            const productMarker = `[SHOPIFY_PRODUCTS]${JSON.stringify(shopifyProducts)}[/SHOPIFY_PRODUCTS]\n`;
+            const productMarker = `[SHOPIFY_PRODUCTS]${JSON.stringify(
+              shopifyProducts
+            )}[/SHOPIFY_PRODUCTS]\n`;
             controller.enqueue(new TextEncoder().encode(productMarker));
-            console.log("Streamed product data marker with", shopifyProducts.length, "products");
+            console.log(
+              "Streamed product data marker with",
+              shopifyProducts.length,
+              "products"
+            );
 
             // Get final response from AI with tool results
             const finalStream = await client.chat.send({
