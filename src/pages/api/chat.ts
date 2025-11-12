@@ -11,32 +11,21 @@ interface ChatMessage {
   name?: string;
 }
 
-// System prompt with tool definitions
-const SYSTEM_PROMPT = `You are a helpful shopping assistant for an online clothing store.
-
-Available Tools:
-- search_shop_catalog: Search the product catalog. Use focused, natural language queries like "blue linen shirt" or "women's oxford shirt white". Returns up to 5 products with title, price, image, and details.
-
-When users ask about products:
-1. Use search_shop_catalog with concise search terms
-2. Present results clearly with product names and prices
-3. Be helpful and conversational
-
-Keep responses concise and friendly.`;
-
 // Tool definitions for OpenRouter
 const TOOLS = [
   {
     type: "function" as const,
     function: {
       name: "search_shop_catalog",
-      description: "Search the store's product catalog. Use natural language queries focused on product type, color, style, or other attributes.",
+      description:
+        "Search the store's product catalog. Use natural language queries focused on product type, color, style, or other attributes.",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "Natural language search query (e.g., 'blue linen shirt', 'men's casual pants')",
+            description:
+              "Natural language search query (e.g., 'blue linen shirt', 'men's casual pants')",
           },
           first: {
             type: "number",
@@ -54,7 +43,11 @@ const TOOLS = [
 const chatHistory = new Map<string, ChatMessage[]>();
 
 // Execute MCP search_shop_catalog tool
-async function executeSearchCatalog(query: string, first: number = 5, baseUrl: string) {
+async function executeSearchCatalog(
+  query: string,
+  first: number = 5,
+  baseUrl: string
+) {
   try {
     const response = await fetch(`${baseUrl}/api/mcp`, {
       method: "POST",
@@ -120,10 +113,33 @@ export const POST: APIRoute = async ({ request, url }) => {
     // Get history and update with user message
     const history = chatHistory.get(CHAT_HISTORY_KEY) || [];
 
+    // Enhanced system prompt combining tool definitions and ecommerce context
+    const enhancedSystemPrompt = `You are a helpful ecommerce shopping assistant. Help users find and shop for clothing, particularly shirts.
+
+Available Tools:
+- search_shop_catalog: Search the product catalog. Use focused, natural language queries like "blue linen shirt" or "women's oxford shirt white". Returns up to 5 products with title, price, image, and details.
+
+When users ask about products:
+1. Use search_shop_catalog with concise search terms to find relevant products
+2. Acknowledge their request warmly
+3. Mention that you'll show them relevant products below the chat
+4. Highlight key features like virtual try-on capability
+5. Present results clearly with product names and prices
+6. Keep responses concise and friendly
+
+Available products include various styles of shirts: casual, formal, linen, cotton, polo, flannel, etc.
+
+Key features:
+- Virtual try-on: Users can upload a photo and virtually try on any item
+- Shopping cart: Users can add items and proceed to checkout
+- Product search: You can help find specific styles, colors, or types
+
+Be conversational and helpful!`;
+
     // Add system prompt if this is the first message
     const messages: ChatMessage[] = [];
     if (history.length === 0) {
-      messages.push({ role: "system", content: SYSTEM_PROMPT });
+      messages.push({ role: "system", content: enhancedSystemPrompt });
     }
     messages.push(...history, { role: "user", content: message });
 
@@ -160,11 +176,15 @@ export const POST: APIRoute = async ({ request, url }) => {
                   toolCalls[index] = {
                     id: toolCall.id,
                     type: "function",
-                    function: { name: toolCall.function?.name || "", arguments: "" }
+                    function: {
+                      name: toolCall.function?.name || "",
+                      arguments: "",
+                    },
                   };
                 }
                 if (toolCall.function?.arguments) {
-                  toolCalls[index].function.arguments += toolCall.function.arguments;
+                  toolCalls[index].function.arguments +=
+                    toolCall.function.arguments;
                 }
               }
             }
@@ -176,22 +196,36 @@ export const POST: APIRoute = async ({ request, url }) => {
             console.log("Tool calls:", JSON.stringify(toolCalls));
             const newHistory = [
               ...messages,
-              { role: "assistant" as const, content: assistantMessage, tool_calls: toolCalls }
+              {
+                role: "assistant" as const,
+                content: assistantMessage,
+                tool_calls: toolCalls,
+              },
             ];
 
             // Execute tool calls
             for (const toolCall of toolCalls) {
               if (toolCall.function.name === "search_shop_catalog") {
-                console.log("Executing search_shop_catalog with args:", toolCall.function.arguments);
+                console.log(
+                  "Executing search_shop_catalog with args:",
+                  toolCall.function.arguments
+                );
                 const args = JSON.parse(toolCall.function.arguments);
-                const toolResult = await executeSearchCatalog(args.query, args.first || 5, baseUrl);
-                console.log("Tool result:", JSON.stringify(toolResult).substring(0, 200));
+                const toolResult = await executeSearchCatalog(
+                  args.query,
+                  args.first || 5,
+                  baseUrl
+                );
+                console.log(
+                  "Tool result:",
+                  JSON.stringify(toolResult).substring(0, 200)
+                );
 
                 newHistory.push({
                   role: "assistant" as const,
                   content: JSON.stringify(toolResult),
                   tool_call_id: toolCall.id,
-                  name: "search_shop_catalog"
+                  name: "search_shop_catalog",
                 });
               }
             }
@@ -216,7 +250,7 @@ export const POST: APIRoute = async ({ request, url }) => {
             chatHistory.set(CHAT_HISTORY_KEY, [
               ...history,
               { role: "user", content: message },
-              { role: "assistant", content: finalMessage }
+              { role: "assistant", content: finalMessage },
             ]);
           } else {
             // No tool calls, just save the message
@@ -239,7 +273,7 @@ export const POST: APIRoute = async ({ request, url }) => {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {
