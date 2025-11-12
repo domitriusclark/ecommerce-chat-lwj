@@ -8,6 +8,7 @@ interface TryOnModalProps {
   onClose: () => void;
   product: UIProduct;
   selfieImage: string;
+  userContext?: string;
   onAddToCart: (
     product: UIProduct,
     variant: ProductVariant,
@@ -21,6 +22,7 @@ export default function TryOnModal({
   onClose,
   product,
   selfieImage,
+  userContext,
   onAddToCart,
   onImageGenerated,
 }: TryOnModalProps) {
@@ -62,6 +64,7 @@ export default function TryOnModal({
           selfieImage,
           productImage: productImageBase64,
           productTitle: product.title,
+          userContext: userContext || "",
         }),
       });
 

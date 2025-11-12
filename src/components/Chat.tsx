@@ -12,6 +12,7 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   products?: UIProduct[];
+  userQuery?: string; // Store the original user query for context
 }
 
 interface ChatProps {
@@ -39,6 +40,7 @@ export default function Chat({
   const [isTryOnModalOpen, setIsTryOnModalOpen] = useState(false);
   const [isVariantSelectorOpen, setIsVariantSelectorOpen] = useState(false);
   const [productForCart, setProductForCart] = useState<UIProduct | null>(null);
+  const [currentUserContext, setCurrentUserContext] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -109,6 +111,7 @@ export default function Chat({
           role: "assistant",
           content: assistantMessage,
           products: shopifyProducts,
+          userQuery: shopifyProducts ? userQuery : undefined,
         },
       ]);
     }
@@ -152,7 +155,7 @@ export default function Chat({
     }
   }
 
-  function handleTryOn(product: UIProduct) {
+  function handleTryOn(product: UIProduct, userContext?: string) {
     if (!selfieImage) {
       alert(
         "Please upload your photo first to use the virtual try-on feature!"
@@ -160,6 +163,7 @@ export default function Chat({
       return;
     }
     setSelectedProduct(product);
+    setCurrentUserContext(userContext || "");
     setIsTryOnModalOpen(true);
   }
 
@@ -192,7 +196,7 @@ export default function Chat({
           <div className='mt-4'>
             <ProductGrid
               products={message.products}
-              onTryOn={handleTryOn}
+              onTryOn={(product) => handleTryOn(product, message.userQuery)}
               onAddToCart={handleAddToCartClick}
             />
           </div>
@@ -308,9 +312,11 @@ export default function Chat({
           onClose={() => {
             setIsTryOnModalOpen(false);
             setSelectedProduct(null);
+            setCurrentUserContext("");
           }}
           product={selectedProduct}
           selfieImage={selfieImage}
+          userContext={currentUserContext}
           onAddToCart={onAddToCart}
           onImageGenerated={onImageGenerated}
         />
