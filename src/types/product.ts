@@ -49,3 +49,16 @@ export interface TryOnResult {
   compositeImage: string;
 }
 
+export interface CartItem {
+  id: string;
+  product: UIProduct;
+  variant: ProductVariant;
+  quantity: number;
+}
+
+export interface Cart {
+  items: CartItem[];
+  totalItems: number;
+  subtotal: number;
+}
+

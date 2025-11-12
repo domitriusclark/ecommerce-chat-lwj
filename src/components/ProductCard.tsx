@@ -81,6 +81,16 @@ export default function ProductCard({ product, onTryOn, onAddToCart }: ProductCa
             Sizes: {product.variants.map(v => v.title).join(', ')}
           </div>
         )}
+
+        {/* Add to Cart Button */}
+        {onAddToCart && (
+          <button
+            onClick={() => onAddToCart(product)}
+            className="w-full mt-3 px-4 py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            Add to Cart
+          </button>
+        )}
       </div>
     </div>
   );

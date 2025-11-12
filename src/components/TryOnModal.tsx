@@ -1,13 +1,18 @@
 import { useState, useEffect } from "react";
-import type { UIProduct } from "../types/product";
+import type { UIProduct, ProductVariant } from "../types/product";
 import { urlToBase64 } from "../lib/imageUtils";
+import VariantSelector from "./VariantSelector";
 
 interface TryOnModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: UIProduct;
   selfieImage: string;
-  onAddToCart: (product: UIProduct) => void;
+  onAddToCart: (
+    product: UIProduct,
+    variant: ProductVariant,
+    quantity: number
+  ) => void;
   onImageGenerated: (image: string, productTitle: string) => void;
 }
 
@@ -25,6 +30,7 @@ export default function TryOnModal({
   const [activeTab, setActiveTab] = useState<"original" | "product" | "tryon">(
     "tryon"
   );
+  const [isVariantSelectorOpen, setIsVariantSelectorOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen && !compositeImage && !isGenerating) {
@@ -104,9 +110,13 @@ export default function TryOnModal({
     document.body.removeChild(link);
   };
 
-  const handleAddToCart = () => {
-    onAddToCart(product);
-    onClose();
+  const handleAddToCartClick = () => {
+    setIsVariantSelectorOpen(true);
+  };
+
+  const handleVariantSelected = (variant: ProductVariant, quantity: number) => {
+    onAddToCart(product, variant, quantity);
+    setIsVariantSelectorOpen(false);
   };
 
   if (!isOpen) return null;
@@ -263,7 +273,7 @@ export default function TryOnModal({
                 Close
               </button>
               <button
-                onClick={handleAddToCart}
+                onClick={handleAddToCartClick}
                 className='px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium'
               >
                 Add to Cart
@@ -272,6 +282,15 @@ export default function TryOnModal({
           </div>
         )}
       </div>
+
+      {/* Variant Selector */}
+      {isVariantSelectorOpen && (
+        <VariantSelector
+          product={product}
+          onSelect={handleVariantSelected}
+          onClose={() => setIsVariantSelectorOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import type { UIProduct } from "../types/product";
+import type { UIProduct, ProductVariant } from "../types/product";
 import { searchProducts } from "../lib/productUtils";
 import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
+import VariantSelector from "./VariantSelector";
 
 interface Message {
   role: "user" | "assistant";
@@ -13,9 +14,18 @@ interface Message {
 interface ChatProps {
   selfieImage: string;
   onImageGenerated: (image: string, productTitle: string) => void;
+  onAddToCart: (
+    product: UIProduct,
+    variant: ProductVariant,
+    quantity: number
+  ) => void;
 }
 
-export default function Chat({ selfieImage, onImageGenerated }: ChatProps) {
+export default function Chat({
+  selfieImage,
+  onImageGenerated,
+  onAddToCart,
+}: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +34,8 @@ export default function Chat({ selfieImage, onImageGenerated }: ChatProps) {
     null
   );
   const [isTryOnModalOpen, setIsTryOnModalOpen] = useState(false);
+  const [isVariantSelectorOpen, setIsVariantSelectorOpen] = useState(false);
+  const [productForCart, setProductForCart] = useState<UIProduct | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -153,9 +165,16 @@ export default function Chat({ selfieImage, onImageGenerated }: ChatProps) {
     setIsTryOnModalOpen(true);
   }
 
-  function handleAddToCart(product: UIProduct) {
-    // Note: Cart will be handled by Shopify MCP
-    alert(`${product.title} will be added to cart via Shopify MCP`);
+  function handleAddToCartClick(product: UIProduct) {
+    setProductForCart(product);
+    setIsVariantSelectorOpen(true);
+  }
+
+  function handleVariantSelected(variant: ProductVariant, quantity: number) {
+    if (productForCart) {
+      onAddToCart(productForCart, variant, quantity);
+      setProductForCart(null);
+    }
   }
 
   function renderMessage(message: Message, index: number) {
@@ -176,7 +195,7 @@ export default function Chat({ selfieImage, onImageGenerated }: ChatProps) {
             <ProductGrid
               products={message.products}
               onTryOn={handleTryOn}
-              onAddToCart={handleAddToCart}
+              onAddToCart={handleAddToCartClick}
             />
           </div>
         )}
@@ -294,8 +313,20 @@ export default function Chat({ selfieImage, onImageGenerated }: ChatProps) {
           }}
           product={selectedProduct}
           selfieImage={selfieImage}
-          onAddToCart={handleAddToCart}
+          onAddToCart={onAddToCart}
           onImageGenerated={onImageGenerated}
+        />
+      )}
+
+      {/* Variant Selector */}
+      {isVariantSelectorOpen && productForCart && (
+        <VariantSelector
+          product={productForCart}
+          onSelect={handleVariantSelected}
+          onClose={() => {
+            setIsVariantSelectorOpen(false);
+            setProductForCart(null);
+          }}
         />
       )}
     </div>
