@@ -8,6 +8,7 @@ interface TryOnModalProps {
   product: UIProduct;
   selfieImage: string;
   onAddToCart: (product: UIProduct) => void;
+  onImageGenerated: (image: string, productTitle: string) => void;
 }
 
 export default function TryOnModal({
@@ -16,6 +17,7 @@ export default function TryOnModal({
   product,
   selfieImage,
   onAddToCart,
+  onImageGenerated,
 }: TryOnModalProps) {
   const [compositeImage, setCompositeImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -68,6 +70,8 @@ export default function TryOnModal({
       if (data.compositeImage) {
         setCompositeImage(data.compositeImage);
         setActiveTab("tryon");
+        // Add to history
+        onImageGenerated(data.compositeImage, product.title);
       } else if (data.shouldRetry) {
         // Rate limit error - show user-friendly message
         setError(

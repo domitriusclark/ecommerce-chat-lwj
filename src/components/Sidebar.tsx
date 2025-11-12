@@ -5,14 +5,23 @@ import {
   validateImageType,
 } from "../lib/imageUtils";
 
+interface GeneratedImage {
+  id: string;
+  image: string;
+  productTitle: string;
+  timestamp: number;
+}
+
 interface SidebarProps {
   onImageSelected: (base64: string) => void;
   currentImage?: string;
+  generatedImages: GeneratedImage[];
 }
 
 export default function Sidebar({
   onImageSelected,
   currentImage,
+  generatedImages,
 }: SidebarProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +164,37 @@ export default function Sidebar({
                   alt='Uploaded selfie'
                   className='w-full h-auto object-contain'
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Display generated images history */}
+          {generatedImages.length > 0 && (
+            <div className='pt-4 border-t border-gray-700'>
+              <h3 className='font-semibold text-gray-200 mb-2'>
+                Generated Try-Ons ({generatedImages.length})
+              </h3>
+              <div className='space-y-3'>
+                {generatedImages.map((genImage) => (
+                  <div
+                    key={genImage.id}
+                    className='rounded-lg overflow-hidden border border-gray-600 bg-gray-800'
+                  >
+                    <img
+                      src={genImage.image}
+                      alt={`Try-on: ${genImage.productTitle}`}
+                      className='w-full h-auto object-contain'
+                    />
+                    <div className='p-2'>
+                      <p className='text-xs text-gray-300 truncate'>
+                        {genImage.productTitle}
+                      </p>
+                      <p className='text-xs text-gray-500'>
+                        {new Date(genImage.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

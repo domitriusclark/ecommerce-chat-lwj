@@ -12,9 +12,10 @@ interface Message {
 
 interface ChatProps {
   selfieImage: string;
+  onImageGenerated: (image: string, productTitle: string) => void;
 }
 
-export default function Chat({ selfieImage }: ChatProps) {
+export default function Chat({ selfieImage, onImageGenerated }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -294,6 +295,7 @@ export default function Chat({ selfieImage }: ChatProps) {
           product={selectedProduct}
           selfieImage={selfieImage}
           onAddToCart={handleAddToCart}
+          onImageGenerated={onImageGenerated}
         />
       )}
     </div>
