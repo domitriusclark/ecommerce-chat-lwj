@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import type { UIProduct, ProductVariant } from "../types/product";
-import { mapShopifyMCPToUIProduct, type ShopifyMCPProduct } from "../lib/productUtils";
+import {
+  mapShopifyMCPToUIProduct,
+  type ShopifyMCPProduct,
+} from "../lib/productUtils";
 import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
 import VariantSelector from "./VariantSelector";
@@ -77,17 +80,24 @@ export default function Chat({
       assistantMessage += text;
 
       // Check for Shopify product markers
-      const productMatch = assistantMessage.match(/\[SHOPIFY_PRODUCTS\](.*?)\[\/SHOPIFY_PRODUCTS\]/s);
+      const productMatch = assistantMessage.match(
+        /\[SHOPIFY_PRODUCTS\](.*?)\[\/SHOPIFY_PRODUCTS\]/s
+      );
       if (productMatch) {
         try {
           const mcpProducts: ShopifyMCPProduct[] = JSON.parse(productMatch[1]);
           console.log("Raw MCP Products:", mcpProducts);
           shopifyProducts = mcpProducts.map(mapShopifyMCPToUIProduct);
-          console.log(`Parsed ${shopifyProducts.length} Shopify products from stream`);
+          console.log(
+            `Parsed ${shopifyProducts.length} Shopify products from stream`
+          );
           console.log("Mapped UIProducts:", shopifyProducts);
 
           // Remove the marker from the displayed message
-          assistantMessage = assistantMessage.replace(/\[SHOPIFY_PRODUCTS\].*?\[\/SHOPIFY_PRODUCTS\]\n?/s, '');
+          assistantMessage = assistantMessage.replace(
+            /\[SHOPIFY_PRODUCTS\].*?\[\/SHOPIFY_PRODUCTS\]\n?/s,
+            ""
+          );
         } catch (e) {
           console.error("Failed to parse Shopify products from stream:", e);
         }
