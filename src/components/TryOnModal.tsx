@@ -1,13 +1,20 @@
 import { useState, useEffect } from "react";
-import type { UIProduct } from "../types/product";
+import type { UIProduct, ProductVariant } from "../types/product";
 import { urlToBase64 } from "../lib/imageUtils";
+import VariantSelector from "./VariantSelector";
 
 interface TryOnModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: UIProduct;
   selfieImage: string;
-  onAddToCart: (product: UIProduct) => void;
+  userContext?: string;
+  onAddToCart: (
+    product: UIProduct,
+    variant: ProductVariant,
+    quantity: number
+  ) => void;
+  onImageGenerated: (image: string, productTitle: string) => void;
 }
 
 export default function TryOnModal({
@@ -15,7 +22,9 @@ export default function TryOnModal({
   onClose,
   product,
   selfieImage,
+  userContext,
   onAddToCart,
+  onImageGenerated,
 }: TryOnModalProps) {
   const [compositeImage, setCompositeImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -23,6 +32,7 @@ export default function TryOnModal({
   const [activeTab, setActiveTab] = useState<"original" | "product" | "tryon">(
     "tryon"
   );
+  const [isVariantSelectorOpen, setIsVariantSelectorOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen && !compositeImage && !isGenerating) {
@@ -54,6 +64,7 @@ export default function TryOnModal({
           selfieImage,
           productImage: productImageBase64,
           productTitle: product.title,
+          userContext: userContext || "",
         }),
       });
 
@@ -68,6 +79,8 @@ export default function TryOnModal({
       if (data.compositeImage) {
         setCompositeImage(data.compositeImage);
         setActiveTab("tryon");
+        // Add to history
+        onImageGenerated(data.compositeImage, product.title);
       } else if (data.shouldRetry) {
         // Rate limit error - show user-friendly message
         setError(
@@ -100,9 +113,13 @@ export default function TryOnModal({
     document.body.removeChild(link);
   };
 
-  const handleAddToCart = () => {
-    onAddToCart(product);
-    onClose();
+  const handleAddToCartClick = () => {
+    setIsVariantSelectorOpen(true);
+  };
+
+  const handleVariantSelected = (variant: ProductVariant, quantity: number) => {
+    onAddToCart(product, variant, quantity);
+    setIsVariantSelectorOpen(false);
   };
 
   if (!isOpen) return null;
@@ -259,7 +276,7 @@ export default function TryOnModal({
                 Close
               </button>
               <button
-                onClick={handleAddToCart}
+                onClick={handleAddToCartClick}
                 className='px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium'
               >
                 Add to Cart
@@ -268,6 +285,15 @@ export default function TryOnModal({
           </div>
         )}
       </div>
+
+      {/* Variant Selector */}
+      {isVariantSelectorOpen && (
+        <VariantSelector
+          product={product}
+          onSelect={handleVariantSelected}
+          onClose={() => setIsVariantSelectorOpen(false)}
+        />
+      )}
     </div>
   );
 }

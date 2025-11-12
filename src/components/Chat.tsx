@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import type { UIProduct } from "../types/product";
-import { mapShopifyMCPToUIProduct, type ShopifyMCPProduct } from "../lib/productUtils";
+import type { UIProduct, ProductVariant } from "../types/product";
+import {
+  mapShopifyMCPToUIProduct,
+  type ShopifyMCPProduct,
+} from "../lib/productUtils";
 import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
+import VariantSelector from "./VariantSelector";
 
 interface CartInfo {
   cartId: string;
@@ -14,13 +18,24 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   products?: UIProduct[];
+  userQuery?: string; // Store the original user query for context
 }
 
 interface ChatProps {
   selfieImage: string;
+  onImageGenerated: (image: string, productTitle: string) => void;
+  onAddToCart: (
+    product: UIProduct,
+    variant: ProductVariant,
+    quantity: number
+  ) => void;
 }
 
-export default function Chat({ selfieImage }: ChatProps) {
+export default function Chat({
+  selfieImage,
+  onImageGenerated,
+  onAddToCart,
+}: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +48,9 @@ export default function Chat({ selfieImage }: ChatProps) {
     null
   );
   const [isTryOnModalOpen, setIsTryOnModalOpen] = useState(false);
+  const [isVariantSelectorOpen, setIsVariantSelectorOpen] = useState(false);
+  const [productForCart, setProductForCart] = useState<UIProduct | null>(null);
+  const [currentUserContext, setCurrentUserContext] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const CART_STORAGE_KEY = "shopify-cart-info";
@@ -75,17 +93,24 @@ export default function Chat({ selfieImage }: ChatProps) {
       assistantMessage += text;
 
       // Check for Shopify product markers
-      const productMatch = assistantMessage.match(/\[SHOPIFY_PRODUCTS\](.*?)\[\/SHOPIFY_PRODUCTS\]/s);
+      const productMatch = assistantMessage.match(
+        /\[SHOPIFY_PRODUCTS\](.*?)\[\/SHOPIFY_PRODUCTS\]/s
+      );
       if (productMatch) {
         try {
           const mcpProducts: ShopifyMCPProduct[] = JSON.parse(productMatch[1]);
           console.log("Raw MCP Products:", mcpProducts);
           shopifyProducts = mcpProducts.map(mapShopifyMCPToUIProduct);
-          console.log(`Parsed ${shopifyProducts.length} Shopify products from stream`);
+          console.log(
+            `Parsed ${shopifyProducts.length} Shopify products from stream`
+          );
           console.log("Mapped UIProducts:", shopifyProducts);
 
           // Remove the marker from the displayed message
-          assistantMessage = assistantMessage.replace(/\[SHOPIFY_PRODUCTS\].*?\[\/SHOPIFY_PRODUCTS\]\n?/s, '');
+          assistantMessage = assistantMessage.replace(
+            /\[SHOPIFY_PRODUCTS\].*?\[\/SHOPIFY_PRODUCTS\]\n?/s,
+            ""
+          );
         } catch (e) {
           console.error("Failed to parse Shopify products from stream:", e);
         }
@@ -97,6 +122,7 @@ export default function Chat({ selfieImage }: ChatProps) {
           role: "assistant",
           content: assistantMessage,
           products: shopifyProducts,
+          userQuery: shopifyProducts ? userQuery : undefined,
         },
       ]);
     }
@@ -140,7 +166,7 @@ export default function Chat({ selfieImage }: ChatProps) {
     }
   }
 
-  function handleTryOn(product: UIProduct) {
+  function handleTryOn(product: UIProduct, userContext?: string) {
     if (!selfieImage) {
       alert(
         "Please upload your photo first to use the virtual try-on feature!"
@@ -148,6 +174,7 @@ export default function Chat({ selfieImage }: ChatProps) {
       return;
     }
     setSelectedProduct(product);
+    setCurrentUserContext(userContext || "");
     setIsTryOnModalOpen(true);
   }
 
@@ -374,10 +401,25 @@ export default function Chat({ selfieImage }: ChatProps) {
           onClose={() => {
             setIsTryOnModalOpen(false);
             setSelectedProduct(null);
+            setCurrentUserContext("");
           }}
           product={selectedProduct}
           selfieImage={selfieImage}
-          onAddToCart={handleAddToCart}
+          userContext={currentUserContext}
+          onAddToCart={onAddToCart}
+          onImageGenerated={onImageGenerated}
+        />
+      )}
+
+      {/* Variant Selector */}
+      {isVariantSelectorOpen && productForCart && (
+        <VariantSelector
+          product={productForCart}
+          onSelect={handleVariantSelected}
+          onClose={() => {
+            setIsVariantSelectorOpen(false);
+            setProductForCart(null);
+          }}
         />
       )}
     </div>
