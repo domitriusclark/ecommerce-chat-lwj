@@ -6,7 +6,8 @@ interface TryOnModalProps {
   isOpen: boolean;
   onClose: () => void;
   product: UIProduct;
-  selfieImage: string;
+  selfieImageUrl: string;
+  conversationId?: string;
   onAddToCart: (product: UIProduct) => void;
 }
 
@@ -14,7 +15,8 @@ export default function TryOnModal({
   isOpen,
   onClose,
   product,
-  selfieImage,
+  selfieImageUrl,
+  conversationId,
   onAddToCart,
 }: TryOnModalProps) {
   const [compositeImage, setCompositeImage] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export default function TryOnModal({
     setError(null);
 
     try {
-      // Convert product image URL to base64
+      // Convert product and selfie image URLs to base64
       let productImageBase64 = product.imageUrl;
       if (product.imageUrl && !product.imageUrl.startsWith("data:")) {
         try {
@@ -47,13 +49,20 @@ export default function TryOnModal({
         }
       }
 
+      let selfieImageBase64 = selfieImageUrl;
+      if (selfieImageUrl && !selfieImageUrl.startsWith("data:")) {
+        selfieImageBase64 = await urlToBase64(selfieImageUrl);
+      }
+
       const response = await fetch("/api/tryon", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          selfieImage,
+          selfieImage: selfieImageBase64,
           productImage: productImageBase64,
           productTitle: product.title,
+          productId: product.id,
+          conversationId,
         }),
       });
 
@@ -65,8 +74,11 @@ export default function TryOnModal({
       const data = await response.json();
 
       // Check if we got an actual image or just a message
-      if (data.compositeImage) {
-        setCompositeImage(data.compositeImage);
+      const generatedImage =
+        data.generatedImageUrl || data.compositeImage || null;
+
+      if (generatedImage) {
+        setCompositeImage(generatedImage);
         setActiveTab("tryon");
       } else if (data.shouldRetry) {
         // Rate limit error - show user-friendly message
@@ -226,7 +238,7 @@ export default function TryOnModal({
               )}
               {activeTab === "original" && (
                 <img
-                  src={selfieImage}
+                  src={selfieImageUrl}
                   alt='Your original photo'
                   className='max-w-full max-h-[60vh] rounded-lg shadow-lg'
                 />

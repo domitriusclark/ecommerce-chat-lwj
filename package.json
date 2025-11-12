@@ -11,6 +11,7 @@
   "dependencies": {
     "@astrojs/netlify": "^6.2.0",
     "@astrojs/react": "^4.2.0",
+    "@netlify/blobs": "^10.3.3",
     "@openrouter/sdk": "^0.1.11",
     "@tailwindcss/vite": "^4.0.12",
     "@types/react": "^19.0.10",

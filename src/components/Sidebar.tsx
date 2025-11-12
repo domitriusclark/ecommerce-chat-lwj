@@ -6,13 +6,13 @@ import {
 } from "../lib/imageUtils";
 
 interface SidebarProps {
-  onImageSelected: (base64: string) => void;
-  currentImage?: string;
+  onImageSelected: (imageId: string, imageUrl: string) => void;
+  currentImageUrl?: string;
 }
 
 export default function Sidebar({
   onImageSelected,
-  currentImage,
+  currentImageUrl,
 }: SidebarProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,11 +40,28 @@ export default function Sidebar({
 
     try {
       setIsUploading(true);
+
+      // Convert to base64
       const base64 = await fileToBase64(file);
-      onImageSelected(base64);
+
+      // Upload to blob storage
+      const response = await fetch('/api/upload-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ image: base64 }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload image');
+      }
+
+      const data = await response.json();
+      onImageSelected(data.imageId, data.url);
     } catch (err) {
-      setError("Failed to process image. Please try again.");
-      console.error("Error processing image:", err);
+      setError("Failed to upload image. Please try again.");
+      console.error("Error uploading image:", err);
     } finally {
       setIsUploading(false);
     }
@@ -54,7 +71,7 @@ export default function Sidebar({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-    onImageSelected("");
+    onImageSelected("", "");
     setError(null);
   };
 
@@ -101,7 +118,7 @@ export default function Sidebar({
           <span className='text-sm font-medium'>
             {isUploading
               ? "Uploading..."
-              : currentImage
+              : currentImageUrl
               ? "Change Photo"
               : "Upload Photo"}
           </span>
@@ -113,7 +130,7 @@ export default function Sidebar({
           </div>
         )}
 
-        {currentImage && (
+        {currentImageUrl && (
           <button
             onClick={handleReset}
             className='w-full mt-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-gray-800 rounded-lg transition-colors'
@@ -146,12 +163,12 @@ export default function Sidebar({
           </div>
 
           {/* Display uploaded photo */}
-          {currentImage && (
+          {currentImageUrl && (
             <div className='pt-4 border-t border-gray-700'>
               <h3 className='font-semibold text-gray-200 mb-2'>Your photo:</h3>
               <div className='rounded-lg overflow-hidden border border-gray-600'>
                 <img
-                  src={currentImage}
+                  src={currentImageUrl}
                   alt='Uploaded selfie'
                   className='w-full h-auto object-contain'
                 />

@@ -3,12 +3,24 @@ import Sidebar from './Sidebar';
 import Chat from './Chat';
 
 export default function AppContainer() {
-  const [selfieImage, setSelfieImage] = useState<string>('');
+  const [selfieImageId, setSelfieImageId] = useState<string>('');
+  const [selfieImageUrl, setSelfieImageUrl] = useState<string>('');
+
+  const handleImageSelected = (imageId: string, imageUrl: string) => {
+    setSelfieImageId(imageId);
+    setSelfieImageUrl(imageUrl);
+  };
 
   return (
     <div className="flex h-screen">
-      <Sidebar onImageSelected={setSelfieImage} currentImage={selfieImage} />
-      <Chat selfieImage={selfieImage} />
+      <Sidebar
+        onImageSelected={handleImageSelected}
+        currentImageUrl={selfieImageUrl}
+      />
+      <Chat
+        selfieImageId={selfieImageId}
+        selfieImageUrl={selfieImageUrl}
+      />
     </div>
   );
 }

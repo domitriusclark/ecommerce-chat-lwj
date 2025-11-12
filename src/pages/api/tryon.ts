@@ -1,7 +1,37 @@
 import type { APIRoute } from "astro";
+import { getSessionId, storeGeneratedImage } from "../../lib/blobStorage";
 
-export const POST: APIRoute = async ({ request }) => {
+async function imageStringToBuffer(image: string): Promise<{
+  buffer: Buffer;
+  contentType: string;
+}> {
+  if (image.startsWith("data:")) {
+    const matches = image.match(/^data:([^;]+);base64,(.+)$/);
+    if (!matches) {
+      throw new Error("Invalid data URL for generated image");
+    }
+    return {
+      buffer: Buffer.from(matches[2], "base64"),
+      contentType: matches[1],
+    };
+  }
+
+  const response = await fetch(image);
+  if (!response.ok) {
+    throw new Error("Failed to fetch generated image data");
+  }
+
+  const contentType = response.headers.get("content-type") || "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType,
+  };
+}
+
+export const POST: APIRoute = async (context) => {
   try {
+    const { request } = context;
     const apiKey = import.meta.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
@@ -11,7 +41,14 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
-    const { selfieImage, productImage, productTitle } = await request.json();
+    const sessionId = getSessionId(context);
+    const {
+      selfieImage,
+      productImage,
+      productTitle,
+      conversationId,
+      productId,
+    } = await request.json();
 
     if (!selfieImage || !productImage) {
       return new Response(
@@ -143,10 +180,22 @@ Create a seamless, realistic result where the person is wearing the exact clothi
       );
     }
 
+    const { buffer, contentType } = await imageStringToBuffer(compositeImage);
+    const generatedImageId = await storeGeneratedImage(
+      sessionId,
+      buffer,
+      contentType,
+      conversationId,
+      productId
+    );
+    const generatedImageUrl = `/api/images/${generatedImageId}`;
+
     return new Response(
       JSON.stringify({
         success: true,
-        compositeImage,
+        compositeImage: generatedImageUrl,
+        generatedImageId,
+        generatedImageUrl,
         originalSelfie: selfieImage,
         originalProduct: productImage,
       }),

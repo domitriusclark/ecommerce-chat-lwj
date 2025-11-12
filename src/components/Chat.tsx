@@ -1,30 +1,48 @@
 import { useState, useRef, useEffect } from "react";
 import type { UIProduct } from "../types/product";
-import { mapShopifyMCPToUIProduct, type ShopifyMCPProduct } from "../lib/productUtils";
+import type {
+  ConversationSummary,
+  ConversationMessage,
+} from "../types/conversation";
+import {
+  mapShopifyMCPToUIProduct,
+  type ShopifyMCPProduct,
+} from "../lib/productUtils";
 import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
 
-interface Message {
+type Message = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
   products?: UIProduct[];
-}
+};
 
 interface ChatProps {
-  selfieImage: string;
+  selfieImageId: string;
+  selfieImageUrl: string;
 }
 
-export default function Chat({ selfieImage }: ChatProps) {
+export default function Chat({ selfieImageId, selfieImageUrl }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [hasContext, setHasContext] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>(
+    []
+  );
+  const [activeConversationId, setActiveConversationId] = useState<
+    string | null
+  >(null);
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(
     null
   );
   const [isTryOnModalOpen, setIsTryOnModalOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const hasContext = messages.length > 0;
 
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,23 +52,54 @@ export default function Chat({ selfieImage }: ChatProps) {
     setInput(e.target.value);
   }
 
+  async function fetchConversationsList(): Promise<ConversationSummary[]> {
+    try {
+      const response = await fetch("/api/conversations");
+      if (!response.ok) {
+        throw new Error("Failed to fetch conversations");
+      }
+      const data = await response.json();
+      const list: ConversationSummary[] = data.conversations ?? [];
+      setConversations(list);
+      return list;
+    } catch (error) {
+      console.error("Error loading conversations:", error);
+      setConversations([]);
+      return [];
+    }
+  }
+
+  async function createConversationOnServer(): Promise<ConversationSummary> {
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selfieImageId: selfieImageId || undefined,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to create conversation");
+    }
+
+    const data = await response.json();
+    const conversation: ConversationSummary = data.conversation;
+    setConversations((prev) => [conversation, ...prev]);
+    return conversation;
+  }
+
   async function startNewConversation() {
     try {
-      await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newConversation: true }),
-      });
+      const conversation = await createConversationOnServer();
       setMessages([]);
-      setHasContext(false);
+      setActiveConversationId(conversation.id);
     } catch (error) {
       console.error("Error starting new conversation:", error);
     }
   }
 
   async function processStreamedResponse(
-    reader: ReadableStreamDefaultReader<Uint8Array>,
-    userQuery: string
+    reader: ReadableStreamDefaultReader<Uint8Array>
   ) {
     let assistantMessage = "";
     let shopifyProducts: UIProduct[] | undefined;
@@ -91,12 +140,46 @@ export default function Chat({ selfieImage }: ChatProps) {
     }
   }
 
+  async function loadConversationMessages(conversationId: string) {
+    try {
+      setIsLoadingHistory(true);
+      setMessages([]);
+
+      const response = await fetch(`/api/conversations/${conversationId}`);
+      if (!response.ok) {
+        throw new Error("Failed to load conversation history");
+      }
+
+      const data = await response.json();
+      const history: ConversationMessage[] = data.messages ?? [];
+
+      if (conversationId !== activeConversationId) {
+        return;
+      }
+
+      setMessages(
+        history.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          products: message.products,
+        }))
+      );
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+      setMessages([]);
+    } finally {
+      if (conversationId === activeConversationId) {
+        setIsLoadingHistory(false);
+      }
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !activeConversationId) return;
 
     const userMessage = { role: "user" as const, content: input.trim() };
-    const userQuery = input.trim();
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
@@ -105,7 +188,10 @@ export default function Chat({ selfieImage }: ChatProps) {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage.content }),
+        body: JSON.stringify({
+          message: userMessage.content,
+          conversationId: activeConversationId,
+        }),
       });
 
       if (!response.ok) throw new Error("Network response was not ok");
@@ -113,8 +199,20 @@ export default function Chat({ selfieImage }: ChatProps) {
       const reader = response.body?.getReader();
       if (!reader) throw new Error("No reader available");
 
-      await processStreamedResponse(reader, userQuery);
-      setHasContext(true);
+      await processStreamedResponse(reader);
+      setConversations((prev) => {
+        const target = prev.find((c) => c.id === activeConversationId);
+        if (!target) return prev;
+        const updatedConversation: ConversationSummary = {
+          ...target,
+          messageCount: target.messageCount + 2,
+          updatedAt: Date.now(),
+        };
+        return [
+          updatedConversation,
+          ...prev.filter((c) => c.id !== updatedConversation.id),
+        ];
+      });
     } catch (error) {
       console.error("Error:", error);
       setMessages((prev) => [
@@ -130,7 +228,7 @@ export default function Chat({ selfieImage }: ChatProps) {
   }
 
   function handleTryOn(product: UIProduct) {
-    if (!selfieImage) {
+    if (!selfieImageUrl) {
       alert(
         "Please upload your photo first to use the virtual try-on feature!"
       );
@@ -172,6 +270,44 @@ export default function Chat({ selfieImage }: ChatProps) {
   }
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setIsBootstrapping(true);
+      try {
+        const list = await fetchConversationsList();
+        if (cancelled) return;
+
+        if (list.length > 0) {
+          setActiveConversationId((current) => current ?? list[0].id);
+        } else {
+          const conversation = await createConversationOnServer();
+          if (!cancelled) {
+            setActiveConversationId(conversation.id);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Failed to initialize conversations:", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsBootstrapping(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeConversationId) return;
+    loadConversationMessages(activeConversationId);
+  }, [activeConversationId]);
+
+  useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
@@ -190,11 +326,11 @@ export default function Chat({ selfieImage }: ChatProps) {
             {hasContext ? "Conversation context: On" : "New conversation"}
           </span>
           {/* Display uploaded image indicator */}
-          {selfieImage && (
+          {selfieImageUrl && (
             <div className='flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full'>
               <div className='w-6 h-6 rounded-full overflow-hidden border border-green-300'>
                 <img
-                  src={selfieImage}
+                  src={selfieImageUrl}
                   alt='Uploaded'
                   className='w-full h-full object-cover'
                 />
@@ -205,18 +341,47 @@ export default function Chat({ selfieImage }: ChatProps) {
             </div>
           )}
         </div>
-        <button
-          onClick={startNewConversation}
-          className='px-3 py-1 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded'
-          disabled={isLoading}
-        >
-          New Conversation
-        </button>
+        <div className='flex items-center gap-2'>
+          <select
+            value={activeConversationId ?? ""}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value && value !== activeConversationId) {
+                setActiveConversationId(value);
+              }
+            }}
+            disabled={isBootstrapping || conversations.length === 0}
+            className='text-sm border border-gray-300 rounded px-2 py-1 bg-white text-gray-700'
+          >
+            {conversations.length === 0 && (
+              <option value=''>No conversations</option>
+            )}
+            {conversations.map((conversation) => (
+              <option key={conversation.id} value={conversation.id}>
+                {conversation.title || "New conversation"}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={startNewConversation}
+            className='px-3 py-1 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded'
+            disabled={isLoading || isBootstrapping || isLoadingHistory}
+          >
+            New Conversation
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
       <div className='flex-1 overflow-y-auto p-4'>
-        {messages.length === 0 && (
+        {isLoadingHistory && (
+          <div className='flex flex-col items-center justify-center h-full text-gray-500 space-y-2'>
+            <div className='animate-spin rounded-full h-10 w-10 border-b-2 border-gray-400'></div>
+            <p className='text-sm'>Loading conversation…</p>
+          </div>
+        )}
+
+        {!isLoadingHistory && messages.length === 0 && (
           <div className='flex flex-col items-center justify-center h-full text-gray-500 space-y-4'>
             <svg
               className='w-16 h-16'
@@ -244,7 +409,7 @@ export default function Chat({ selfieImage }: ChatProps) {
             </div>
           </div>
         )}
-        {messages.map(renderMessage)}
+        {!isLoadingHistory && messages.map(renderMessage)}
         <div ref={messagesEndRef} />
       </div>
 
@@ -260,11 +425,11 @@ export default function Chat({ selfieImage }: ChatProps) {
           onChange={handleInputChange}
           placeholder='Ask me about shirts...'
           className='flex-1 p-2 border border-gray-200 rounded text-base disabled:bg-gray-50 disabled:cursor-not-allowed'
-          disabled={isLoading}
+          disabled={isLoading || !activeConversationId || isLoadingHistory}
         />
         <button
           type='submit'
-          disabled={isLoading}
+          disabled={isLoading || !activeConversationId || isLoadingHistory}
           className='px-4 py-2 bg-black text-white rounded cursor-pointer text-base disabled:bg-gray-400 disabled:cursor-not-allowed'
         >
           {isLoading ? "Sending..." : "Send"}
@@ -280,7 +445,8 @@ export default function Chat({ selfieImage }: ChatProps) {
             setSelectedProduct(null);
           }}
           product={selectedProduct}
-          selfieImage={selfieImage}
+          selfieImageUrl={selfieImageUrl}
+          conversationId={activeConversationId ?? undefined}
           onAddToCart={handleAddToCart}
         />
       )}

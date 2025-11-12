@@ -1,7 +1,17 @@
 import type { APIRoute } from "astro";
 import { OpenRouter } from "@openrouter/sdk";
-
-const CHAT_HISTORY_KEY = "current-chat";
+import {
+  createConversation,
+  generateConversationTitle,
+  getConversation,
+  getMessages,
+  getSessionId,
+  storeConversation,
+  storeMessage,
+} from "../../lib/blobStorage";
+import type { StoredConversation } from "../../lib/blobStorage";
+import type { UIProduct } from "../../types/product";
+import { mapShopifyMCPToUIProduct } from "../../lib/productUtils";
 
 interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -39,8 +49,15 @@ const TOOLS = [
   },
 ];
 
-// In-memory storage for chat history (replace with database in production)
-const chatHistory = new Map<string, ChatMessage[]>();
+const STREAM_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
+};
+
+function createMessageId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 // Execute MCP search_shop_catalog tool
 async function executeSearchCatalog(
@@ -73,8 +90,9 @@ async function executeSearchCatalog(
   }
 }
 
-export const POST: APIRoute = async ({ request, url }) => {
+export const POST: APIRoute = async (context) => {
   try {
+    const { request, url } = context;
     // Initialize OpenRouter client with API key from environment
     const apiKey = import.meta.env.OPENROUTER_API_KEY;
 
@@ -93,12 +111,13 @@ export const POST: APIRoute = async ({ request, url }) => {
     // Get base URL from request
     const baseUrl = `${url.protocol}//${url.host}`;
 
-    const { message, newConversation } = await request.json();
+    const sessionId = getSessionId(context);
+    const { message, newConversation, conversationId } = await request.json();
 
     // Handle new conversation request
     if (newConversation) {
-      chatHistory.set(CHAT_HISTORY_KEY, []);
-      return new Response(JSON.stringify({ success: true }), {
+      const conversation = await createConversation(sessionId);
+      return new Response(JSON.stringify({ conversation }), {
         headers: { "Content-Type": "application/json" },
       });
     }
@@ -110,8 +129,19 @@ export const POST: APIRoute = async ({ request, url }) => {
       });
     }
 
-    // Get history and update with user message
-    const history = chatHistory.get(CHAT_HISTORY_KEY) || [];
+    let conversationRecord: StoredConversation | null = null;
+    if (conversationId) {
+      conversationRecord = await getConversation(sessionId, conversationId);
+    }
+
+    if (!conversationRecord) {
+      conversationRecord = await createConversation(sessionId);
+    }
+
+    const resolvedConversationId = conversationRecord.id;
+
+    // Get persisted history for this conversation
+    const history = await getMessages(sessionId, resolvedConversationId);
 
     // Enhanced system prompt combining tool definitions and ecommerce context
     const enhancedSystemPrompt = `You are a helpful ecommerce shopping assistant. Help users find and shop for clothing, particularly shirts.
@@ -148,7 +178,29 @@ Be conversational, concise, and helpful!`;
     if (history.length === 0) {
       messages.push({ role: "system", content: enhancedSystemPrompt });
     }
-    messages.push(...history, { role: "user", content: message });
+    messages.push(
+      ...history.map((historicalMessage) => ({
+        role: historicalMessage.role,
+        content: historicalMessage.content,
+      })),
+      { role: "user", content: message }
+    );
+
+    const userTimestamp = Date.now();
+    await storeMessage(sessionId, {
+      id: createMessageId(),
+      conversationId: resolvedConversationId,
+      role: "user",
+      content: message,
+      timestamp: userTimestamp,
+    });
+
+    conversationRecord.messageCount += 1;
+    conversationRecord.updatedAt = userTimestamp;
+    if (conversationRecord.messageCount === 1) {
+      conversationRecord.title = generateConversationTitle(message);
+    }
+    await storeConversation(sessionId, conversationRecord);
 
     // Call OpenRouter with tool support
     const stream = await client.chat.send({
@@ -163,6 +215,8 @@ Be conversational, concise, and helpful!`;
       async start(controller) {
         let assistantMessage = "";
         let toolCalls: any[] = [];
+        let storedProducts: UIProduct[] | undefined = undefined;
+        let productPayloadForClient: any[] = [];
 
         try {
           for await (const chunk of stream) {
@@ -211,7 +265,6 @@ Be conversational, concise, and helpful!`;
             ];
 
             // Execute tool calls and collect product data
-            let shopifyProducts: any[] = [];
             for (const toolCall of toolCalls) {
               if (toolCall.function.name === "search_shop_catalog") {
                 console.log(
@@ -234,8 +287,11 @@ Be conversational, concise, and helpful!`;
                   if (toolResult.content && toolResult.content[0]?.text) {
                     const parsedContent = JSON.parse(toolResult.content[0].text);
                     if (parsedContent.products && Array.isArray(parsedContent.products)) {
-                      shopifyProducts = parsedContent.products;
-                      console.log(`Extracted ${shopifyProducts.length} products from Shopify MCP`);
+                      productPayloadForClient = parsedContent.products;
+                      storedProducts = parsedContent.products.map((product: any) =>
+                        mapShopifyMCPToUIProduct(product)
+                      );
+                      console.log(`Extracted ${productPayloadForClient.length} products from Shopify MCP`);
                     }
                   }
                 } catch (e) {
@@ -252,9 +308,15 @@ Be conversational, concise, and helpful!`;
             }
 
             // Stream product data marker before AI response (even if empty array)
-            const productMarker = `[SHOPIFY_PRODUCTS]${JSON.stringify(shopifyProducts)}[/SHOPIFY_PRODUCTS]\n`;
+            const productMarker = `[SHOPIFY_PRODUCTS]${JSON.stringify(
+              productPayloadForClient
+            )}[/SHOPIFY_PRODUCTS]\n`;
             controller.enqueue(new TextEncoder().encode(productMarker));
-            console.log("Streamed product data marker with", shopifyProducts.length, "products");
+            console.log(
+              "Streamed product data marker with",
+              productPayloadForClient.length,
+              "products"
+            );
 
             // Get final response from AI with tool results
             const finalStream = await client.chat.send({
@@ -273,18 +335,33 @@ Be conversational, concise, and helpful!`;
             }
 
             // Save with tool interaction
-            chatHistory.set(CHAT_HISTORY_KEY, [
-              ...history,
-              { role: "user", content: message },
-              { role: "assistant", content: finalMessage },
-            ]);
+            const assistantTimestamp = Date.now();
+            await storeMessage(sessionId, {
+              id: createMessageId(),
+              conversationId: resolvedConversationId,
+              role: "assistant",
+              content: finalMessage,
+              products: storedProducts,
+              timestamp: assistantTimestamp,
+            });
+
+            conversationRecord.messageCount += 1;
+            conversationRecord.updatedAt = assistantTimestamp;
+            await storeConversation(sessionId, conversationRecord);
           } else {
             // No tool calls, just save the message
-            chatHistory.set(CHAT_HISTORY_KEY, [
-              ...history,
-              { role: "user", content: message },
-              { role: "assistant", content: assistantMessage },
-            ]);
+            const assistantTimestamp = Date.now();
+            await storeMessage(sessionId, {
+              id: createMessageId(),
+              conversationId: resolvedConversationId,
+              role: "assistant",
+              content: assistantMessage,
+              timestamp: assistantTimestamp,
+            });
+
+            conversationRecord.messageCount += 1;
+            conversationRecord.updatedAt = assistantTimestamp;
+            await storeConversation(sessionId, conversationRecord);
           }
 
           controller.close();
@@ -297,9 +374,8 @@ Be conversational, concise, and helpful!`;
 
     return new Response(responseStream, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        ...STREAM_HEADERS,
+        "X-Conversation-Id": resolvedConversationId,
       },
     });
   } catch (error) {
