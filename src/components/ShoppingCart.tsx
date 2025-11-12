@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CartItem } from "../types/product";
 
 interface ShoppingCartProps {
@@ -13,6 +14,8 @@ export default function ShoppingCart({
   onRemoveItem,
   onClearCart,
 }: ShoppingCartProps) {
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const formatPrice = (price: string) => {
     const amount = parseFloat(price);
     return new Intl.NumberFormat("en-US", {
@@ -33,6 +36,48 @@ export default function ShoppingCart({
   };
 
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+
+  const handleCheckout = async () => {
+    setIsCheckingOut(true);
+    setCheckoutError(null);
+
+    try {
+      // Prepare line items for Shopify checkout
+      const lineItems = cartItems.map(item => ({
+        variantId: item.variant.id,
+        quantity: item.quantity,
+      }));
+
+      // Call checkout API
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ lineItems }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout');
+      }
+
+      const data = await response.json();
+
+      // Redirect to Shopify checkout
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      setCheckoutError(
+        error instanceof Error ? error.message : 'Failed to proceed to checkout'
+      );
+      setIsCheckingOut(false);
+    }
+  };
 
   if (cartItems.length === 0) {
     return (
@@ -190,10 +235,52 @@ export default function ShoppingCart({
           </div>
         </div>
 
+        {/* Error Message */}
+        {checkoutError && (
+          <div className='mb-3 p-3 bg-red-900/50 border border-red-700 rounded-lg text-xs text-red-200'>
+            {checkoutError}
+          </div>
+        )}
+
+        {/* Checkout Button */}
+        <button
+          onClick={handleCheckout}
+          disabled={isCheckingOut}
+          className='w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg transition-colors mb-2 disabled:bg-gray-600 disabled:cursor-not-allowed'
+        >
+          {isCheckingOut ? (
+            <span className='flex items-center justify-center gap-2'>
+              <svg
+                className='animate-spin h-4 w-4'
+                fill='none'
+                viewBox='0 0 24 24'
+              >
+                <circle
+                  className='opacity-25'
+                  cx='12'
+                  cy='12'
+                  r='10'
+                  stroke='currentColor'
+                  strokeWidth='4'
+                />
+                <path
+                  className='opacity-75'
+                  fill='currentColor'
+                  d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
+                />
+              </svg>
+              Processing...
+            </span>
+          ) : (
+            'Proceed to Checkout'
+          )}
+        </button>
+
         {/* Clear Cart Button */}
         <button
           onClick={onClearCart}
-          className='w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors'
+          disabled={isCheckingOut}
+          className='w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed'
         >
           Clear Cart
         </button>
