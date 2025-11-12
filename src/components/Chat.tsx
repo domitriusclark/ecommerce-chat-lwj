@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { UIProduct } from "../types/product";
 import { searchProducts } from "../lib/productUtils";
-import SelfieUpload from "./SelfieUpload";
 import ProductGrid from "./ProductGrid";
 import TryOnModal from "./TryOnModal";
 
@@ -11,12 +10,15 @@ interface Message {
   products?: UIProduct[];
 }
 
-export default function Chat() {
+interface ChatProps {
+  selfieImage: string;
+}
+
+export default function Chat({ selfieImage }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [hasContext, setHasContext] = useState(false);
-  const [selfieImage, setSelfieImage] = useState<string>("");
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(
     null
   );
@@ -192,12 +194,29 @@ export default function Chat() {
   }, [isLoading]);
 
   return (
-    <div className='flex flex-col h-[800px] border border-gray-200 rounded-lg bg-white shadow-lg'>
+    <div className='flex flex-col h-screen flex-1 bg-white'>
       {/* Header */}
       <div className='flex justify-between items-center p-4 border-b border-gray-200 bg-gray-50'>
-        <span className='text-sm text-gray-500'>
-          {hasContext ? "Conversation context: On" : "New conversation"}
-        </span>
+        <div className='flex items-center gap-4'>
+          <span className='text-sm text-gray-500'>
+            {hasContext ? "Conversation context: On" : "New conversation"}
+          </span>
+          {/* Display uploaded image indicator */}
+          {selfieImage && (
+            <div className='flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full'>
+              <div className='w-6 h-6 rounded-full overflow-hidden border border-green-300'>
+                <img
+                  src={selfieImage}
+                  alt='Uploaded'
+                  className='w-full h-full object-cover'
+                />
+              </div>
+              <span className='text-xs text-green-700 font-medium'>
+                Photo loaded
+              </span>
+            </div>
+          )}
+        </div>
         <button
           onClick={startNewConversation}
           className='px-3 py-1 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded'
@@ -205,14 +224,6 @@ export default function Chat() {
         >
           New Conversation
         </button>
-      </div>
-
-      {/* Selfie Upload */}
-      <div className='p-4 border-b border-gray-200'>
-        <SelfieUpload
-          onImageSelected={setSelfieImage}
-          currentImage={selfieImage}
-        />
       </div>
 
       {/* Messages */}
@@ -266,7 +277,7 @@ export default function Chat() {
         <button
           type='submit'
           disabled={isLoading}
-          className='px-4 py-2 bg-blue-600 text-white rounded cursor-pointer text-base disabled:bg-blue-400 disabled:cursor-not-allowed'
+          className='px-4 py-2 bg-black text-white rounded cursor-pointer text-base disabled:bg-gray-400 disabled:cursor-not-allowed'
         >
           {isLoading ? "Sending..." : "Send"}
         </button>
