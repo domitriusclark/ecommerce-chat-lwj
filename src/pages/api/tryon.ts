@@ -23,18 +23,29 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Construct the prompt for virtual try-on
-    const prompt = `Generate a photorealistic image of this person wearing the ${
-      productTitle || "shirt"
-    } shown in the second image. 
-    
-Instructions:
-- Naturally fit the shirt onto the person's body
-- Put them in different poses with backgrounds that are different from the original photo
-- Make sure the clothing looks natural and properly fitted
-- The result should look like a real photograph, not a composite
+    // Important: Focus on the visual product image, not the title
+    const prompt = `Generate a photorealistic image of the person from the first image wearing the EXACT clothing item shown in the second image.
 
-Create a seamless, realistic result where it looks like the person is actually wearing this clothing item. If the user says what the shirt is for, use that
-information to generate a theme based on that. For example, if they said they wanted a shirt for an office setting, generate a photo of them in an office setting.`;
+CRITICAL: Look at the second image carefully and use the EXACT clothing item you see there - the exact color, style, pattern, and design. Ignore any text descriptions and only use what you visually see in the second image.
+
+Instructions:
+- Use the EXACT clothing item from the second image (exact colors, patterns, style)
+- Naturally fit the clothing onto the person's body
+- Make the clothing look natural and properly fitted
+- The result should look like a real professional photograph
+
+BACKGROUND & CONTEXT - IMPORTANT:
+If the user mentioned a specific purpose, event, or setting for the clothing (such as "for work", "for the office", "for a wedding", "for a date", "for a casual day out", etc.), generate an appropriate background and pose that matches that context:
+- Office/Work: Professional office setting, business environment
+- Wedding/Formal: Elegant venue, formal setting
+- Casual/Weekend: Relaxed outdoor or casual indoor setting
+- Date: Romantic restaurant or nice venue
+- Interview: Professional, clean background
+- Party/Social: Social gathering environment
+
+If NO specific context was mentioned, use a neutral, professional background that complements the clothing style.
+
+Create a seamless, realistic result where the person is wearing the exact clothing from the second image in an appropriate setting.`;
 
     // Prepare images - ensure they're in proper base64 format
     const selfieBase64 = selfieImage.startsWith("data:")
