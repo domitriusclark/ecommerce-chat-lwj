@@ -55,6 +55,7 @@ An MCP-powered ecommerce chat interface built with Astro, React, and OpenRouter 
 OPENROUTER_API_KEY=<your-key>
 STOREFRONT_MCP_ENDPOINT=https://your-store.myshopify.com/api/mcp
 SHOPIFY_STOREFRONT_PASSWORD=<optional-password>  # Only needed for password-protected stores
+SHOPIFY_STOREFRONT_ACCESS_TOKEN=<storefront-access-token>  # Required for checkout/cart mutations
 ```
 
 **Notes:**
